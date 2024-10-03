@@ -69,12 +69,6 @@ def BATNORM():
         momentum=0.9, axis=CH_AXIS, epsilon=1.01e-5, gamma_initializer=GAMMA_INIT
     )
 
-
-# leaky ReLU (y = alpha*x for x < 0, y = x for x > 0)
-def LEAKY_RELU(alpha):
-    return LeakyReLU(alpha)
-
-
 #  the descriminator
 def BASIC_D(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel):
     # combines the inputs from the generator and the desired input
@@ -96,7 +90,7 @@ def BASIC_D(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel):
         # apply convolution
         L = DN_CONV(N_FEATURE, kernel_size=kernel, strides=2, padding="same")(INPUT)
         # Apply leaky ReLU activation with a slope of 0.2
-        L = LEAKY_RELU(0.2)(L)
+        L = LeakyReLU(0.2)(L)
 
         # Apply convolution MAX_LAYERS times
         for _ in range(1, MAX_LAYERS):
@@ -106,7 +100,7 @@ def BASIC_D(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel):
             # normalise
             L = BATNORM()(L, training=1)
             # Apply leaky ReLU activation with a slope of 0.2
-            L = LEAKY_RELU(0.2)(L)
+            L = LeakyReLU(0.2)(L)
 
         N_FEATURE *= 2  # double the number of filters
         L = ZeroPadding2D(1)(L)  # pads the model with 0s with a thickness of 1
@@ -115,7 +109,7 @@ def BASIC_D(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel):
         # normalise
         L = BATNORM()(L, training=1)
         # Apply leaky ReLU activation with a slope of 0.2
-        L = LEAKY_RELU(0.2)(L)
+        L = LeakyReLU(0.2)(L)
 
         N_FEATURE = 1
         L = ZeroPadding2D(1)(L)  # pads the model with 0s with a thickness of 1
@@ -152,7 +146,7 @@ def BLOCK(X, S, NF_IN, USE_BATNORM=True, NF_OUT=None, NF_NEXT=None, kernel=4):
         if USE_BATNORM:
             X = BATNORM()(X, training=1)
         # apply leaky ReLU with a slope of 0,2
-        X2 = LEAKY_RELU(0.2)(X)
+        X2 = LeakyReLU(0.2)(X)
         # continue recursion until size = 2, halving size each time
 
         X2 = BLOCK(X2, S // 2, NF_NEXT)
