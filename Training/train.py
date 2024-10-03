@@ -48,7 +48,8 @@ MODEL_PATH = "./Models/" + TRIAL_NAME + "/"
 os.makedirs(MODEL_PATH) if not os.path.exists(MODEL_PATH) else None
 
 data_paths = get_data_paths("./image.db", args.input, args.output, args.connector)
-LIST_TOTAL = shuffle(list(GRAB_DATA(data_paths, args.tol)))
+LIST_TOTAL = list(GRAB_DATA(data_paths, args.tol))
+shuffle(LIST_TOTAL)
 assert len(LIST_TOTAL) > 0, "No Images satisfy constraints (check --tol)"
 print(f"Training on {len(LIST_TOTAL)} images.")
 
