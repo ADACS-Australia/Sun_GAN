@@ -4,7 +4,7 @@ import time
 from random import shuffle
 
 from datasets import GRAB_DATA, MINI_BATCH, get_data_paths
-from model import ISIZE, NC_IN, NC_OUT, NET_D_TRAIN, NET_G, NET_G_TRAIN
+from model import get_models
 
 # parse the optional arguments:
 parser = argparse.ArgumentParser()
@@ -42,6 +42,12 @@ DISPLAY_ITERS = args.display_iter
 NITERS = args.max_iter  # total number of iterations
 BATCH_SIZE = args.batch_size  # number of images in each batch
 TRIAL_NAME = args.model_name
+ISIZE = 1024  # height of the image
+NC_IN = 1  # number of input channels (1 for greyscale, 3 for RGB)
+NC_OUT = 1  # number of output channels (1 for greyscale, 3 for RGB)
+# max layers in the discriminator not including sigmoid activation:
+# 1 for 16, 2 for 34, 3 for 70, 4 for 142, and 5 for 286 (receptive field size)
+MAX_LAYERS = 3
 
 # make a folder for the trial if it doesn't already exist
 MODEL_PATH = "./Models/" + TRIAL_NAME + "/"
@@ -55,6 +61,7 @@ print(f"Training on {len(LIST_TOTAL)} images.")
 
 # creates a generator to use for training
 TRAIN_BATCH = MINI_BATCH(LIST_TOTAL, BATCH_SIZE, NC_IN, NC_OUT)
+NET_G, NET_D, NET_G_TRAIN, NET_D_TRAIN = get_models(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, args.kernel)
 
 # initialise training variables
 T0 = T1 = time.time()

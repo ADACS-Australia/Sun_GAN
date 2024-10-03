@@ -22,8 +22,6 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-CH_AXIS = -1
-
 # configure tensorflow
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -33,12 +31,6 @@ tf.Session(config=config)
 K.set_image_data_format("channels_last")
 
 CH_AXIS = -1
-ISIZE = 1024  # height of the image
-NC_IN = 1  # number of input channels (1 for greyscale, 3 for RGB)
-NC_OUT = 1  # number of output channels (1 for greyscale, 3 for RGB)
-# max layers in the discriminator not including sigmoid activation:
-# 1 for 16, 2 for 34, 3 for 70, 4 for 142, and 5 for 286 (receptive field size)
-MAX_LAYERS = 3
 
 # generates tensors with a normal distribution with (mean, standard deviation)
 # this is used as a matrix of weights
@@ -199,54 +191,56 @@ def get_mask(size):
     mask = dist_from_center <= radius
     return mask
 
+def get_models(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel):
+    # The discriminator model
+    NET_D = BASIC_D(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel)
+    # The generator model
+    NET_G = UNET_G(ISIZE, NC_IN, NC_OUT, kernel)
 
-# The discriminator model
-NET_D = BASIC_D(ISIZE, NC_IN, NC_OUT, MAX_LAYERS, kernel=4)
-# The generator model
-NET_G = UNET_G(ISIZE, NC_IN, NC_OUT, kernel=4)
+    # tensor placeholders?
+    REAL_A = NET_G.input  # generator input (AIA)
+    FAKE_B = NET_G.output  # generator output (fake HMI)
+    REAL_B = NET_D.inputs[1]  # descriminator input (real HMI)
 
-# tensor placeholders?
-REAL_A = NET_G.input  # generator input (AIA)
-FAKE_B = NET_G.output  # generator output (fake HMI)
-REAL_B = NET_D.inputs[1]  # descriminator input (real HMI)
+    # output of the discriminator for AIA and real HMI
+    OUTPUT_D_REAL = NET_D([REAL_A, REAL_B])
+    # output of the discriminator for AIA and fake HMI
+    OUTPUT_D_FAKE = NET_D([REAL_A, FAKE_B])
 
-# output of the discriminator for AIA and real HMI
-OUTPUT_D_REAL = NET_D([REAL_A, REAL_B])
-# output of the discriminator for AIA and fake HMI
-OUTPUT_D_FAKE = NET_D([REAL_A, FAKE_B])
+    # set initial values for the loss
+    # ones_like creates a tensor of the same shape full of ones
+    # zeros_like creates a tensor of the same shape full of zeros
+    # as the discriminator gives the probability that the input is a real HMI
+    # picture, we want it to out put 1 when the input is real and 0 when the
+    # input is fake.
+    LOSS_D_REAL = LOSS_FN(OUTPUT_D_REAL, K.ones_like(OUTPUT_D_REAL))
+    LOSS_D_FAKE = LOSS_FN(OUTPUT_D_FAKE, K.zeros_like(OUTPUT_D_FAKE))
+    # while the generator, we want the discriminator to guess that the
+    # generator output is the real HMI, which corresponds to the discriminator
+    # outputting 1:
+    LOSS_G_FAKE = LOSS_FN(OUTPUT_D_FAKE, K.ones_like(OUTPUT_D_FAKE))
 
-# set initial values for the loss
-# ones_like creates a tensor of the same shape full of ones
-# zeros_like creates a tensor of the same shape full of zeros
-# as the discriminator gives the probability that the input is a real HMI
-# picture, we want it to out put 1 when the input is real and 0 when the
-# input is fake.
-LOSS_D_REAL = LOSS_FN(OUTPUT_D_REAL, K.ones_like(OUTPUT_D_REAL))
-LOSS_D_FAKE = LOSS_FN(OUTPUT_D_FAKE, K.zeros_like(OUTPUT_D_FAKE))
-# while the generator, we want the discriminator to guess that the
-# generator output is the real HMI, which corresponds to the discriminator
-# outputting 1:
-LOSS_G_FAKE = LOSS_FN(OUTPUT_D_FAKE, K.ones_like(OUTPUT_D_FAKE))
+    # total average difference between the real and generated HMIs
+    LOSS_L = K.mean(K.abs(FAKE_B - REAL_B))
 
-# total average difference between the real and generated HMIs
-LOSS_L = K.mean(K.abs(FAKE_B - REAL_B))
+    # Total loss of the discriminator
+    LOSS_D = LOSS_D_REAL + LOSS_D_FAKE
+    # gives the updates for the discriminator training
+    TRAINING_UPDATES_D = Adam(lr=2e-4, beta_1=0.5).get_updates(
+        LOSS_D, NET_D.trainable_weights
+    )
+    # creates a function that trains the discriminator
+    NET_D_TRAIN = K.function([REAL_A, REAL_B], [LOSS_D / 2.0], TRAINING_UPDATES_D)
 
-# Total loss of the discriminator
-LOSS_D = LOSS_D_REAL + LOSS_D_FAKE
-# gives the updates for the discriminator training
-TRAINING_UPDATES_D = Adam(lr=2e-4, beta_1=0.5).get_updates(
-    LOSS_D, NET_D.trainable_weights
-)
-# creates a function that trains the discriminator
-NET_D_TRAIN = K.function([REAL_A, REAL_B], [LOSS_D / 2.0], TRAINING_UPDATES_D)
+    # The total loss of G, which includes the difference between the real and
+    # generated HMIs, as well as the loss because of the descriminator
+    LOSS_G = LOSS_G_FAKE + 100 * LOSS_L
 
-# The total loss of G, which includes the difference between the real and
-# generated HMIs, as well as the loss because of the descriminator
-LOSS_G = LOSS_G_FAKE + 100 * LOSS_L
+    # operation to update the gradient of the generator using the adam optimizer
+    TRAINING_UPDATES_G = Adam(lr=2e-4, beta_1=0.5).get_updates(
+        LOSS_G, NET_G.trainable_weights
+    )
+    # function to train the generator
+    NET_G_TRAIN = K.function([REAL_A, REAL_B], [LOSS_G_FAKE, LOSS_L], TRAINING_UPDATES_G)
 
-# operation to update the gradient of the generator using the adam optimizer
-TRAINING_UPDATES_G = Adam(lr=2e-4, beta_1=0.5).get_updates(
-    LOSS_G, NET_G.trainable_weights
-)
-# function to train the generator
-NET_G_TRAIN = K.function([REAL_A, REAL_B], [LOSS_G_FAKE, LOSS_L], TRAINING_UPDATES_G)
+    return NET_G, NET_D, NET_G_TRAIN, NET_D_TRAIN
